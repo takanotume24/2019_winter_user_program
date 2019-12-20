@@ -141,7 +141,6 @@ int client_sockfd;
 int music = 0;
 int music_now = MUSIC_OFF;
 
-void tajima_1(struct js_event js, int fd);
 void tajima_2(struct js_event js, int fd);
 void tajima_3(struct js_event js, int fd);
 void tajima_4(struct js_event js, int fd);
@@ -184,17 +183,9 @@ int main(int argc, char **argv) {
       &thread_enable_b, NULL, fun_thread_enable_b_pwm, (void *)&fd_motor);
   result_pthread_ds3 =
       pthread_create(&thread_ds3, NULL, fun_thread_ds3, (void *)&fd_motor);
-  // result_pthread_wii =
-  //     pthread_create(&thread_wii, NULL, fun_thread_wii, (void *)&fd_motor);
   result_pthread_socket = pthread_create(&thread_socket, NULL,
                                          fun_thread_socket, (void *)&fd_motor);
 
-  // int result_pthread_wii_sensor = pthread_create(
-  //     &thread_get_sensor, NULL, fun_thread_wii_sensor, (void *)&btn_data);
-
-  // if (result_pthread_wii_sensor != 0) {
-  //   printf("faild create pthread wii sensor\n");
-  // }
   if (result_pthread_create_pin_enable_a != 0) {
     printf("faild create pthread pin 05\n");
   }
@@ -260,11 +251,38 @@ void *fun_thread_enable_b_pwm(void *ptr) {
   }
 }
 
+int check_tajima_button(struct js_event js) {
+  switch (js.type) {
+    case DS3_TYPE_1:
+      switch (js.number) {
+        case DS3_BUTTON_DOWN:
+        case DS3_BUTTON_UP:
+        case DS3_BUTTON_LEFT:
+        case DS3_BUTTON_RIGHT:
+          printf("tajima mode\n");
+          return 1;
+          break;
+      }
+      break;
+  }
+  return 0;
+}
+
 void *fun_thread_ds3(void *ptr) {
   int fd_motor = *(int *)ptr;
   uint16_t js_time_old = 0;
 
   while (keep_running) {
+    tajima_2(js, fd_motor);
+    tajima_3(js, fd_motor);
+    tajima_4(js, fd_motor);
+    tajima_5(js, fd_motor);
+    tajima_6(js, fd_motor);
+
+    if (check_tajima_button(js)) {
+      continue;
+    }
+
     if (js_time_old == js.time) {
       ioctl(fd_motor, CMD_HOUDAI_STOP, 0);
       continue;
@@ -343,14 +361,7 @@ void *fun_thread_ds3(void *ptr) {
         }
         break;
     }
-    tajima_1(js, fd_motor);
-    tajima_2(js, fd_motor);
-    tajima_3(js, fd_motor);
-    tajima_4(js, fd_motor);
-    tajima_5(js, fd_motor);
-    tajima_6(js, fd_motor);
-    // printf("tick_a %d, %d\n", tick_a * SCL, ((useconds_t)100 - tick_a) *
-    // SCL);
+
     js_time_old = js.time;
 
     usleep(10000);  // Choose yourself
@@ -521,24 +532,6 @@ void *fun_thread_socket(void *ptr) {
   return 0;
 }
 
-void tajima_1(struct js_event js, int fd) {
-  if (js.type == 1 && js.number == 8) {  // L2 button
-    if (js.value == 1) {
-      if (music_now == MUSIC_OFF) {
-        system("/usr/bin/mpg321 /home/pi/mp3/do-tyu-ki.mp3 -g 4000 -q &");
-      }
-    }
-    if (js.value == 0) {
-      music = system("./pid_mpg321.sh");
-      if (music > 0) {
-        if (music_now == MUSIC_ON) {
-          system("/bin/kill `/bin/ps --no-heading -C mpg321 -o pid`");
-          music_now = MUSIC_OFF;
-        }
-      }
-    }
-  }
-}
 void tajima_2(struct js_event js, int fd) {
   if (js.type == 1 && js.number == 4) {  //　　↑
     if (js.value == 1) {
@@ -549,10 +542,12 @@ void tajima_2(struct js_event js, int fd) {
       ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
     }
+    tick_a = 100;
+    tick_b = 100;
   }
 }
 void tajima_3(struct js_event js, int fd) {
-  if (js.type == 1 && js.number == 4) {  //　　↓
+  if (js.type == 1 && js.number == 6) {  //　　↓
     if (js.value == 1) {
       ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
@@ -561,6 +556,8 @@ void tajima_3(struct js_event js, int fd) {
       ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
     }
+    tick_a = 100;
+    tick_b = 100;
   }
 }
 void tajima_4(struct js_event js, int fd) {
@@ -573,11 +570,13 @@ void tajima_4(struct js_event js, int fd) {
       ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
     }
+    tick_a = 100;
+    tick_b = 100;
   }
 }
 
 void tajima_5(struct js_event js, int fd) {
-  if (js.type == 1 && js.number == 4) {  //　　→
+  if (js.type == 1 && js.number == 5) {  //　　→
     if (js.value == 1) {
       ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
@@ -586,6 +585,8 @@ void tajima_5(struct js_event js, int fd) {
       ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
     }
+    tick_a = 100;
+    tick_b = 100;
   }
 }
 void tajima_6(struct js_event js, int fd) {

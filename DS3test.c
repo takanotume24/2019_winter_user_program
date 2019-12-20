@@ -64,6 +64,8 @@
 #define FACE_VALUE_LEFT 100
 #define FACE_VALUE_RIGHT 0
 
+#define CMD_GPIO02_VALUE 1
+
 #define CMD_MOTOR_LEFT_FOWARD 32
 #define CMD_MOTOR_LEFT_BACK 33
 #define CMD_MOTOR_LEFT_STOP 34
@@ -104,6 +106,9 @@
 #define DS3_STICK_RIGHT_X 2
 #define DS3_STICK_RIGHT_Y 3
 
+#define MUSIC_ON 45
+#define MUSIC_OFF 46
+
 void *fun_thread_enable_a_pwm(void *ptr);
 void *fun_thread_enable_b_pwm(void *ptr);
 void *fun_thread_ds3(void *ptr);
@@ -132,6 +137,16 @@ struct wii_acc acc_now; /* 計測した加速度センサの値 */
 
 int sockfd;
 int client_sockfd;
+
+int music = 0;
+int music_now = MUSIC_OFF;
+
+void tajima_1(struct js_event js, int fd);
+void tajima_2(struct js_event js, int fd);
+void tajima_3(struct js_event js, int fd);
+void tajima_4(struct js_event js, int fd);
+void tajima_5(struct js_event js, int fd);
+void tajima_6(struct js_event js, int fd);
 
 void intHandler(int dummy) { keep_running = 0; }
 
@@ -323,10 +338,17 @@ void *fun_thread_ds3(void *ptr) {
               ioctl(fd_motor, CMD_MOTOR_RIGHT_BACK, 0);
               tick_b = (abs(js.value) / MAX_VALUE_STICK) * MAX_VALUE_ARG;
             }
+            printf("right %d\n", js.value);
             break;
         }
         break;
     }
+    tajima_1(js, fd_motor);
+    tajima_2(js, fd_motor);
+    tajima_3(js, fd_motor);
+    tajima_4(js, fd_motor);
+    tajima_5(js, fd_motor);
+    tajima_6(js, fd_motor);
     // printf("tick_a %d, %d\n", tick_a * SCL, ((useconds_t)100 - tick_a) *
     // SCL);
     js_time_old = js.time;
@@ -446,7 +468,7 @@ void *fun_thread_socket(void *ptr) {
   // 送信先アドレス・ポート番号設定
   addr.sin_family = AF_INET;
   addr.sin_port = htons(1234);
-  addr.sin_addr.s_addr = inet_addr("192.168.0.32");
+  addr.sin_addr.s_addr = inet_addr("192.168.22.5");
 
   // サーバ接続
   connect(sockfd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in));
@@ -455,28 +477,123 @@ void *fun_thread_socket(void *ptr) {
   char send_str[10] = "ok";
   char receive_str[10] = {0};
   int i = 0;
+  int old_motor = 0;
+
   while (1) {
     read(sockfd, receive_str, sizeof(char) * 10);
     write(sockfd, "ok", sizeof(char) * 10);
     int motor = atoi(receive_str);
     printf("receive:%d\n", motor);
 
-    if (motor > 320 || motor < 0) continue;
-    if (motor > 160) {
-      ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
-      ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
+    if (old_motor == motor) {
+      continue;
     } else {
+      if (motor == 0) {
+        tick_a = 0;
+        tick_b = 0;
+      }
+    }
+    old_motor = motor;
+    if (motor > 320 || motor <= 0) {
+      continue;
+    }
+    if (motor > 160) {
       ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
       ioctl(fd, CMD_MOTOR_RIGHT_FOWARD, 0);
+    } else {
+      ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
     }
-    tick_a = (motor / 320.0) * 100;
-    tick_b = tick_a;
+    int tick = (abs(motor - 160) / 160.0) * 100 + 20;
+    if (tick > 100) {
+      tick = 100;
+    }
+    tick_a = tick;
+    tick_b = tick;
+    printf("%d, %d\n", tick_a, tick_b);
 
-    usleep(100 * 1000);
+    // usleep(10 * 1000);
   }
 
   // ソケットクローズ
   close(sockfd);
 
   return 0;
+}
+
+void tajima_1(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 8) {  // L2 button
+    if (js.value == 1) {
+      if (music_now == MUSIC_OFF) {
+        system("/usr/bin/mpg321 /home/pi/mp3/do-tyu-ki.mp3 -g 4000 -q &");
+      }
+    }
+    if (js.value == 0) {
+      music = system("./pid_mpg321.sh");
+      if (music > 0) {
+        if (music_now == MUSIC_ON) {
+          system("/bin/kill `/bin/ps --no-heading -C mpg321 -o pid`");
+          music_now = MUSIC_OFF;
+        }
+      }
+    }
+  }
+}
+void tajima_2(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 4) {  //　　↑
+    if (js.value == 1) {
+      ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_FOWARD, 0);
+    }
+    if (js.value == 0) {
+      ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
+    }
+  }
+}
+void tajima_3(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 4) {  //　　↓
+    if (js.value == 1) {
+      ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
+    }
+    if (js.value == 0) {
+      ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
+    }
+  }
+}
+void tajima_4(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 7) {  //　　←
+    if (js.value == 1) {
+      ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_FOWARD, 0);
+    }
+    if (js.value == 0) {
+      ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
+    }
+  }
+}
+
+void tajima_5(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 4) {  //　　→
+    if (js.value == 1) {
+      ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
+    }
+    if (js.value == 0) {
+      ioctl(fd, CMD_MOTOR_LEFT_STOP, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_STOP, 0);
+    }
+  }
+}
+void tajima_6(struct js_event js, int fd) {
+  if (js.type == 1 && js.number == 0) {  // SELECT_BUTTON
+    if (js.value == 1) {
+      ioctl(fd, CMD_GPIO02_VALUE, 1);  // LED点灯させる
+    } else if (js.value == 0) {
+      ioctl(fd, CMD_GPIO02_VALUE, 0);  // LEDを消灯させる
+    }
+  }
 }

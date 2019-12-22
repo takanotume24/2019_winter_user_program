@@ -45,7 +45,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #define GLOBAL_DEFINE
-#include "header.h"
+#include "./header.h"
 
 #include <linux/input.h>
 #include <linux/joystick.h>
@@ -433,67 +433,50 @@ void *fun_thread_wii_sensor(void *ptr) {
 }
 
 void *fun_thread_socket(void *ptr) {
-  struct sockaddr_in addr;
-
-  socklen_t len = sizeof(struct sockaddr_in);
-  struct sockaddr_in from_addr;
-
-  char buf[1024];
   int fd = *(int *)ptr;
 
-  // 受信バッファ初期化
-  memset(buf, 0, sizeof(buf));
+  int sockfd;
+  struct sockaddr_in addr;
 
   // ソケット生成
   if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     perror("socket");
   }
 
-  // 待ち受け用IP・ポート番号設定
+  // 送信先アドレス・ポート番号設定
   addr.sin_family = AF_INET;
   addr.sin_port = htons(1234);
-  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_addr.s_addr = inet_addr("192.168.0.32");
 
-  // バインド
-  if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    perror("bind error");
-  }
+  // サーバ接続
+  connect(sockfd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in));
 
-  // 受信待ち
-  if (listen(sockfd, SOMAXCONN) < 0) {
-    perror("listen error");
-  }
-
-  // クライアントからのコネクト要求待ち
-  if ((client_sockfd = accept(sockfd, (struct sockaddr *)&from_addr, &len)) <
-      0) {
-    perror("accept error");
-  }
-
-  // 受信
-  int rsize;
+  // データ送信
+  char send_str[10] = "ok";
+  char receive_str[10] = {0};
+  int i = 0;
   while (1) {
-    rsize = recv(client_sockfd, buf, sizeof(buf), 0);
+    read(sockfd, receive_str, sizeof(char) * 10);
+    write(sockfd, "ok", sizeof(char) * 10);
+    int motor = atoi(receive_str);
+    printf("receive:%d\n", motor);
 
-    if (rsize == 0) {
-      // break;
-    } else if (rsize == -1) {
-      perror("recv");
+    if (motor > 320 || motor < 0) continue;
+    if (motor > 160) {
+      ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
     } else {
-      printf("receive:%s\n", buf);
-      int val = atoi(buf);
-      tick_a = (abs(val - 50) / 50) * 100;
-      tick_b = tick_a;
-      if (val > FACE_VALUE_HEIKOU) {
-        ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
-        ioctl(fd, CMD_MOTOR_RIGHT_FOWARD, 0);
-
-      } else {
-        ioctl(fd, CMD_MOTOR_LEFT_FOWARD, 0);
-        ioctl(fd, CMD_MOTOR_RIGHT_BACK, 0);
-      }
+      ioctl(fd, CMD_MOTOR_LEFT_BACK, 0);
+      ioctl(fd, CMD_MOTOR_RIGHT_FOWARD, 0);
     }
+    tick_a = (motor / 320.0) * 100;
+    tick_b = tick_a;
+
+    usleep(100 * 1000);
   }
+
+  // ソケットクローズ
+  close(sockfd);
 
   return 0;
 }
